@@ -13,5 +13,5 @@ target/
 .project
 
 # Entorno local
-.env
-application-local.yml
+.env.properties
+application-local.yml.
