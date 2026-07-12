@@ -1,0 +1,9 @@
+package com.hotelsistema.backend.repository;
+
+import com.hotelsistema.backend.model.Pago;
+import org.springframework.data.jpa.repository.JpaRepository;
+import java.util.List;
+
+public interface PagoRepository extends JpaRepository<Pago, Integer> {
+    List<Pago> findByReservaId(Integer reservaId);
+}

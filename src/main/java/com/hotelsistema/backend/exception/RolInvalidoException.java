@@ -1,0 +1,7 @@
+package com.hotelsistema.backend.exception;
+
+public class RolInvalidoException extends RuntimeException {
+    public RolInvalidoException(String mensaje) {
+        super(mensaje);
+    }
+}
