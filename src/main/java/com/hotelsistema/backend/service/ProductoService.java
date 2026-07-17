@@ -73,11 +73,11 @@ public class ProductoService {
         return ProductoResponse.fromEntity(producto);
     }
 
-    @Transactional
-    public void desactivar(Integer id) {
+ @Transactional
+    public void cambiarEstado(Integer id, Boolean nuevoEstado) {
         Producto producto = buscarOFallar(id);
-        producto.setActivo(false);
-        productoRepository.save(producto);
+        producto.setActivo(nuevoEstado);
+        productoRepository.save(producto); 
     }
 
     private Producto buscarOFallar(Integer id) {

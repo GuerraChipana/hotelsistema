@@ -73,12 +73,12 @@ public class HabitacionService {
         return HabitacionResponse.fromEntity(habitacion);
     }
 
-    public void desactivar(Integer id) {
+// Ahora recibe el ID y el nuevo estado
+    public void cambiarEstado(Integer id, Boolean nuevoEstado) {
         Habitacion habitacion = buscarOFallar(id);
-        habitacion.setActivo(false);
+        habitacion.setActivo(nuevoEstado);
         habitacionRepository.save(habitacion);
     }
-
     public Habitacion buscarOFallar(Integer id) {
         return habitacionRepository.findById(id)
                 .orElseThrow(() -> new RecursoNoEncontradoException("No existe una habitacion con id " + id));

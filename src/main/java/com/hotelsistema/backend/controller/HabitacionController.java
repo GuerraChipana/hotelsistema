@@ -1,5 +1,6 @@
 package com.hotelsistema.backend.controller;
 
+import com.hotelsistema.backend.dto.EstadoDTO;
 import com.hotelsistema.backend.dto.habitacionesDTO.ActualizarHabitacionRequest;
 import com.hotelsistema.backend.dto.habitacionesDTO.CambiarEstadoHabitacionRequest;
 import com.hotelsistema.backend.dto.habitacionesDTO.CrearHabitacionRequest;
@@ -73,11 +74,11 @@ public class HabitacionController {
         return ResponseEntity.ok(habitacionService.cambiarEstado(id, request));
     }
 
-    // Baja logica (activo = false) -> solo el administrador saca una habitacion de servicio.
-    @DeleteMapping("/{id}")
+  // Baja/Alta logica -> el administrador cambia el estado de la habitacion
+    @PatchMapping("/{id}/estado")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
-    public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
-        habitacionService.desactivar(id);
+    public ResponseEntity<Void> cambiarEstado(@PathVariable Integer id, @Valid @RequestBody EstadoDTO estadoDTO) {
+        habitacionService.cambiarEstado(id, estadoDTO.activo());
         return ResponseEntity.noContent().build();
     }
 }

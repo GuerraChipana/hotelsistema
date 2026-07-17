@@ -1,5 +1,6 @@
 package com.hotelsistema.backend.controller;
 
+import com.hotelsistema.backend.dto.EstadoDTO;
 import com.hotelsistema.backend.dto.productoDTO.ProductoRequest;
 import com.hotelsistema.backend.dto.productoDTO.ProductoResponse;
 import com.hotelsistema.backend.service.ProductoService;
@@ -10,6 +11,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -63,10 +65,10 @@ public class ProductoController {
         return ResponseEntity.ok(productoService.actualizar(id, request));
     }
 
-    @DeleteMapping("/{id}")
+   @PatchMapping("/{id}/estado")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
-    public ResponseEntity<Void> desactivar(@PathVariable Integer id) {
-        productoService.desactivar(id);
+    public ResponseEntity<Void> cambiarEstado(@PathVariable Integer id, @Valid @RequestBody EstadoDTO estadoDTO) {
+        productoService.cambiarEstado(id, estadoDTO.activo());
         return ResponseEntity.noContent().build();
     }
 }

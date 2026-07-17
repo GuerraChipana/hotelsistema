@@ -60,9 +60,9 @@ public class CategoriaService {
         return CategoriaResponse.fromEntity(categoria);
     }
 
-    public void desactivar(Integer id) {
+    public void cambiarEstado(Integer id, Boolean nuevoEstado) {
         Categoria categoria = buscarOFallar(id);
-        categoria.setActivo(false);
+        categoria.setActivo(nuevoEstado);
         categoriaRepository.save(categoria);
     }
 
