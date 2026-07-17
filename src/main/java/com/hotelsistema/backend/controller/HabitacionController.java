@@ -65,16 +65,6 @@ public class HabitacionController {
         return ResponseEntity.ok(habitacionService.actualizar(id, request));
     }
 
-    // Cambiar estado (libre/ocupado/mantenimiento) -> tarea diaria de recepcion,
-    // por eso tambien se lo damos al RECEPCIONISTA ademas del administrador.
-    @PatchMapping("/{id}/estado")
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'RECEPCIONISTA')")
-    public ResponseEntity<HabitacionResponse> cambiarEstado(@PathVariable Integer id,
-                                                             @Valid @RequestBody CambiarEstadoHabitacionRequest request) {
-        return ResponseEntity.ok(habitacionService.cambiarEstado(id, request));
-    }
-
-  // Baja/Alta logica -> el administrador cambia el estado de la habitacion
     @PatchMapping("/{id}/estado")
     @PreAuthorize("hasRole('ADMINISTRADOR')")
     public ResponseEntity<Void> cambiarEstado(@PathVariable Integer id, @Valid @RequestBody EstadoDTO estadoDTO) {
