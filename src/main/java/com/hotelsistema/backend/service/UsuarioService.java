@@ -1,6 +1,7 @@
 package com.hotelsistema.backend.service;
 
 import com.hotelsistema.backend.dto.authDTO.CrearStaffRequest;
+import com.hotelsistema.backend.dto.authDTO.RegisterRequest; // <-- Importar este DTO
 import com.hotelsistema.backend.dto.usuarioDTO.UsuarioResponse;
 import com.hotelsistema.backend.exception.EmailYaRegistradoException;
 import com.hotelsistema.backend.exception.RecursoNoEncontradoException;
@@ -20,7 +21,6 @@ import java.util.Set;
 public class UsuarioService {
 
     // Roles permitidos para crearse desde el panel de administracion.
-    // CLIENTE queda afuera a proposito: para eso esta /api/auth/register (publico).
     private static final Set<Rol> ROLES_STAFF = Set.of(Rol.ADMINISTRADOR, Rol.RECEPCIONISTA);
 
     private final UsuarioRepository usuarioRepository;
@@ -50,22 +50,38 @@ public class UsuarioService {
                 .build();
 
         usuario = usuarioRepository.save(usuario);
-
         return UsuarioResponse.fromEntity(usuario);
     }
 
-    // ... tu código anterior (crearStaff, etc.) ...
+    // --- NUEVO MÉTODO PARA RECEPCIÓN ---
+    public UsuarioResponse crearClientePresencial(RegisterRequest request) {
+        if (usuarioRepository.existsByEmail(request.email())) {
+            throw new EmailYaRegistradoException(request.email());
+        }
+
+        Usuario usuario = Usuario.builder()
+                .nombre(request.nombre())
+                .apellidos(request.apellidos())
+                .email(request.email())
+                .telefono(request.telefono())
+                .rol(Rol.CLIENTE) // <-- Forzamos siempre a que sea CLIENTE
+                .googleAuth(false)
+                .passwordHash(passwordEncoder.encode(request.password()))
+                .activo(true)
+                .build();
+
+        usuario = usuarioRepository.save(usuario);
+        return UsuarioResponse.fromEntity(usuario);
+    }
 
     public List<UsuarioResponse> listarTodos() {
-        // Busca todos los usuarios en la base de datos, los mapea al DTO Response y devuelve la lista
         return usuarioRepository.findAll()
                 .stream()
-                .map(UsuarioResponse::fromEntity) // Asumo que tienes este método en tu UsuarioResponse
+                .map(UsuarioResponse::fromEntity)
                 .toList();
     }
 
     public UsuarioResponse obtenerPorId(Integer id) {
-        // Busca al usuario por ID o lanza una excepción si no existe
         Usuario usuario = usuarioRepository.findById(id)
                 .orElseThrow(() -> new RecursoNoEncontradoException("No se encontró el usuario con ID: " + id));
         
