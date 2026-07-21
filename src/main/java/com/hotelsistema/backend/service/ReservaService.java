@@ -6,12 +6,14 @@ import com.hotelsistema.backend.dto.reservaDTO.ReservaResponse;
 import com.hotelsistema.backend.exception.EstadoReservaInvalidoException;
 import com.hotelsistema.backend.exception.HabitacionNoDisponibleException;
 import com.hotelsistema.backend.exception.RecursoNoEncontradoException;
+import com.hotelsistema.backend.model.EstadoHabitacion;
 import com.hotelsistema.backend.model.EstadoReserva;
 import com.hotelsistema.backend.model.Habitacion;
 import com.hotelsistema.backend.model.ModalidadReserva;
 import com.hotelsistema.backend.model.Reserva;
 import com.hotelsistema.backend.model.Rol;
 import com.hotelsistema.backend.model.Usuario;
+import com.hotelsistema.backend.repository.HabitacionRepository;
 import com.hotelsistema.backend.repository.ReservaRepository;
 import com.hotelsistema.backend.repository.UsuarioRepository;
 import com.hotelsistema.backend.security.UserPrincipal;
@@ -35,25 +37,46 @@ public class ReservaService {
 
     private final ReservaRepository reservaRepository;
     private final UsuarioRepository usuarioRepository;
-    private final HabitacionService habitacionService;
+    private final HabitacionRepository habitacionRepository;
+
+    // ==========================================
+    // 1. MÉTODOS DE CREACIÓN (FLUJOS SEPARADOS)
+    // ==========================================
 
     @Transactional
-    public ReservaResponse crear(CrearReservaRequest request, UserPrincipal principal) {
+    public ReservaResponse crearReservaOnline(CrearReservaRequest request, Integer clienteId) {
+        // El cliente desde la web siempre genera reservas PENDIENTES
+        return procesarReserva(request, clienteId, EstadoReserva.PENDIENTE);
+    }
+
+    @Transactional
+    public ReservaResponse crearReservaPresencial(CrearReservaRequest request) {
+        // El staff en recepción genera reservas PENDIENTES (o PAGADA si pagan inmediatamente)
+        return procesarReserva(request, request.usuarioId(), EstadoReserva.PENDIENTE);
+    }   
+
+    private ReservaResponse procesarReserva(CrearReservaRequest request, Integer usuarioId, EstadoReserva estadoInicial) {
         if (!request.fechaHoraSalida().isAfter(request.fechaHoraEntrada())) {
             throw new IllegalArgumentException("La fecha de salida debe ser posterior a la fecha de entrada");
         }
 
-        Usuario usuario = resolverUsuarioDeLaReserva(request.usuarioId(), principal);
-        Habitacion habitacion = habitacionService.buscarOFallar(request.habitacionId());
+        Usuario usuario = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new RecursoNoEncontradoException("Usuario no encontrado con ID: " + usuarioId));
+
+        Habitacion habitacion = habitacionRepository.findById(request.habitacionId())
+                .orElseThrow(() -> new RecursoNoEncontradoException("Habitación no encontrada con ID: " + request.habitacionId()));
 
         if (!Boolean.TRUE.equals(habitacion.getActivo())) {
             throw new HabitacionNoDisponibleException(
                     "La habitacion " + habitacion.getNumeroHabitacion() + " esta fuera de servicio");
         }
 
+        // Validación de solapamientos (Se excluyen ANULADAS y FINALIZADAS)
         List<Reserva> solapadas = reservaRepository.findSolapamientos(
                 habitacion.getId(), request.fechaHoraEntrada(), request.fechaHoraSalida(),
-                EstadoReserva.ANULADA, null);
+                List.of(EstadoReserva.ANULADA, EstadoReserva.FINALIZADA), 
+                null);
+
         if (!solapadas.isEmpty()) {
             throw new HabitacionNoDisponibleException(
                     "La habitacion " + habitacion.getNumeroHabitacion() +
@@ -66,9 +89,11 @@ public class ReservaService {
 
         BigDecimal costoHabitacion = calcularCostoHabitacion(
                 request.modalidad(), habitacion, request.fechaHoraEntrada(), request.fechaHoraSalida());
+        
         BigDecimal costoPiscina = piscina
                 ? PRECIO_PISCINA_POR_ADULTO.multiply(BigDecimal.valueOf(adultos))
                 : BigDecimal.ZERO;
+        
         BigDecimal costoProductos = BigDecimal.ZERO; // se va a actualizar cuando agreguemos ReservaProducto
         BigDecimal total = costoHabitacion.add(costoPiscina).add(costoProductos);
 
@@ -85,12 +110,16 @@ public class ReservaService {
                 .costoPiscina(costoPiscina)
                 .costoProductos(costoProductos)
                 .totalGeneral(total)
-                .estado(EstadoReserva.PENDIENTE)
+                .estado(estadoInicial)
                 .build();
 
         reserva = reservaRepository.save(reserva);
         return ReservaResponse.fromEntity(reserva);
     }
+
+    // ==========================================
+    // 2. MÉTODOS DE LECTURA
+    // ==========================================
 
     public List<ReservaResponse> listarMias(Integer usuarioId) {
         return reservaRepository.findByUsuarioIdOrderByFechaHoraEntradaDesc(usuarioId).stream()
@@ -116,19 +145,23 @@ public class ReservaService {
         return ReservaResponse.fromEntity(reserva);
     }
 
+    // ==========================================
+    // 3. MÉTODOS DE ACTUALIZACIÓN
+    // ==========================================
+
     /**
      * Cancelar (anular) una reserva.
-     * - El propio CLIENTE dueno solo puede hacerlo si sigue PENDIENTE (todavia no pago).
+     * - El propio CLIENTE dueño solo puede hacerlo si sigue PENDIENTE.
      * - ADMINISTRADOR/RECEPCIONISTA pueden anular cualquier reserva que no
-     *   este ya FINALIZADA o ANULADA (ej. el cliente pidio reembolso).
+     *   esté ya FINALIZADA o ANULADA.
      */
     @Transactional
     public ReservaResponse cancelar(Integer id, UserPrincipal principal) {
         Reserva reserva = buscarOFallar(id);
-        boolean esDueño = reserva.getUsuario().getId().equals(principal.getId());
+        boolean esDueno = reserva.getUsuario().getId().equals(principal.getId());
         boolean esStaff = principal.getUsuario().getRol() != Rol.CLIENTE;
 
-        if (!esDueño && !esStaff) {
+        if (!esDueno && !esStaff) {
             throw new AccessDeniedException("No puedes cancelar la reserva de otro usuario");
         }
         if (reserva.getEstado() == EstadoReserva.FINALIZADA || reserva.getEstado() == EstadoReserva.ANULADA) {
@@ -142,17 +175,24 @@ public class ReservaService {
 
         reserva.setEstado(EstadoReserva.ANULADA);
         reserva = reservaRepository.save(reserva);
+
+        // Si se anula una reserva que por algún motivo ya ocupaba la habitación, se libera
+        if (reserva.getHabitacion().getEstado() == EstadoHabitacion.OCUPADO) {
+            reserva.getHabitacion().setEstado(EstadoHabitacion.LIBRE);
+            habitacionRepository.save(reserva.getHabitacion());
+        }
+
         return ReservaResponse.fromEntity(reserva);
     }
 
     /**
      * Transiciones operativas (PENDIENTE -> PAGADA -> FINALIZADA), solo staff.
-     * No se puede modificar una reserva que ya quedo en un estado terminal.
      */
     @Transactional
     public ReservaResponse cambiarEstado(Integer id, CambiarEstadoReservaRequest request) {
         Reserva reserva = buscarOFallar(id);
-
+        
+        // Validaciones previas
         if (reserva.getEstado() == EstadoReserva.FINALIZADA || reserva.getEstado() == EstadoReserva.ANULADA) {
             throw new EstadoReservaInvalidoException(
                     "No se puede modificar una reserva que ya esta " + reserva.getEstado().name().toLowerCase());
@@ -160,31 +200,34 @@ public class ReservaService {
 
         reserva.setEstado(request.estado());
         reserva = reservaRepository.save(reserva);
+
+        // NUEVA LÓGICA: Sincronizar la habitación físicamente
+        Habitacion habitacion = reserva.getHabitacion();
+        
+        if (request.estado() == EstadoReserva.PAGADA) { 
+            // Check-In: El cliente llega, paga y entra a la habitación
+            habitacion.setEstado(EstadoHabitacion.OCUPADO);
+        } else if (request.estado() == EstadoReserva.FINALIZADA) { 
+            // Check-Out: El cliente se retira, la habitación pasa a mantenimiento/limpieza
+            habitacion.setEstado(EstadoHabitacion.MANTENIMIENTO); 
+        } else if (request.estado() == EstadoReserva.ANULADA && habitacion.getEstado() == EstadoHabitacion.OCUPADO) {
+            // Liberación de emergencia
+            habitacion.setEstado(EstadoHabitacion.LIBRE);
+        }
+        
+        habitacionRepository.save(habitacion);
+
         return ReservaResponse.fromEntity(reserva);
     }
 
-    // ------------------------------------------------------------------
-
-    private Usuario resolverUsuarioDeLaReserva(Integer usuarioIdSolicitado, UserPrincipal principal) {
-        if (principal.getUsuario().getRol() == Rol.CLIENTE) {
-            // Un cliente SIEMPRE reserva para si mismo, sin importar que mande en el body
-            // (evita que reserve "a nombre de" otro usuario).
-            return principal.getUsuario();
-        }
-
-        if (usuarioIdSolicitado == null) {
-            throw new IllegalArgumentException(
-                    "Debes indicar el usuarioId del cliente para el que se hace la reserva");
-        }
-        return usuarioRepository.findById(usuarioIdSolicitado)
-                .orElseThrow(() -> new RecursoNoEncontradoException(
-                        "No existe un usuario con id " + usuarioIdSolicitado));
-    }
+    // ==========================================
+    // 4. MÉTODOS PRIVADOS AUXILIARES
+    // ==========================================
 
     private void validarQuePuedeVerla(Reserva reserva, UserPrincipal principal) {
-        boolean esDueño = reserva.getUsuario().getId().equals(principal.getId());
+        boolean esDueno = reserva.getUsuario().getId().equals(principal.getId());
         boolean esStaff = principal.getUsuario().getRol() != Rol.CLIENTE;
-        if (!esDueño && !esStaff) {
+        if (!esDueno && !esStaff) {
             throw new AccessDeniedException("No puedes ver la reserva de otro usuario");
         }
     }
@@ -194,7 +237,7 @@ public class ReservaService {
      * hacia arriba (una reserva de 1 dia y 2 horas se cobra como 2 dias).
      */
     private BigDecimal calcularCostoHabitacion(ModalidadReserva modalidad, Habitacion habitacion,
-                                                LocalDateTime entrada, LocalDateTime salida) {
+                                               LocalDateTime entrada, LocalDateTime salida) {
         long totalMinutos = Duration.between(entrada, salida).toMinutes();
 
         if (modalidad == ModalidadReserva.POR_DIA) {

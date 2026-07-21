@@ -32,7 +32,7 @@ public interface ReservaRepository extends JpaRepository<Reserva, Integer> {
     @Query("""
             SELECT r FROM Reserva r
             WHERE r.habitacion.id = :habitacionId
-              AND r.estado <> :estadoExcluido
+              AND r.estado NOT IN :estadosExcluidos
               AND r.fechaHoraEntrada < :nuevaSalida
               AND r.fechaHoraSalida > :nuevaEntrada
               AND (:idAExcluir IS NULL OR r.id <> :idAExcluir)
@@ -40,6 +40,9 @@ public interface ReservaRepository extends JpaRepository<Reserva, Integer> {
     List<Reserva> findSolapamientos(@Param("habitacionId") Integer habitacionId,
                                      @Param("nuevaEntrada") LocalDateTime nuevaEntrada,
                                      @Param("nuevaSalida") LocalDateTime nuevaSalida,
-                                     @Param("estadoExcluido") EstadoReserva estadoExcluido,
+                                     @Param("estadosExcluidos") List<EstadoReserva> estadosExcluidos,
                                      @Param("idAExcluir") Integer idAExcluir);
+                                     
+    // AGREGAR ESTE MÉTODO TAMBIÉN PARA EL SCHEDULER (Lo usaremos en el paso 3)
+    List<Reserva> findByEstadoAndFechaHoraEntradaBefore(EstadoReserva estado, LocalDateTime fechaHora);
 }

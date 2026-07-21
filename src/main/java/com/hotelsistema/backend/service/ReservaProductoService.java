@@ -4,6 +4,7 @@ import com.hotelsistema.backend.dto.reservaproductoDTO.AgregarProductoRequest;
 import com.hotelsistema.backend.dto.reservaproductoDTO.ReservaProductoResponse;
 import com.hotelsistema.backend.exception.EstadoReservaInvalidoException;
 import com.hotelsistema.backend.exception.RecursoNoEncontradoException;
+import com.hotelsistema.backend.model.EstadoReserva;
 import com.hotelsistema.backend.model.Producto;
 import com.hotelsistema.backend.model.Reserva;
 import com.hotelsistema.backend.model.ReservaProducto;
@@ -21,6 +22,7 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Transactional(readOnly = true)
 public class ReservaProductoService {
 
     private final ReservaProductoRepository reservaProductoRepository;
@@ -28,7 +30,7 @@ public class ReservaProductoService {
     private final ProductoRepository productoRepository;
 
     @Transactional
-    public ReservaProductoResponse agregarProducto(Integer reservaId, AgregarProductoRequest request) { // <-- CORREGIDO
+    public ReservaProductoResponse agregarProducto(Integer reservaId, AgregarProductoRequest request) {
         Reserva reserva = buscarReserva(reservaId);
         validarEstadoReserva(reserva);
 
@@ -52,8 +54,7 @@ public class ReservaProductoService {
         return mapearAResponse(guardado);
     }
 
-    @Transactional(readOnly = true)
-    public List<ReservaProductoResponse> obtenerProductosDeReserva(Integer reservaId) { // <-- CORREGIDO
+    public List<ReservaProductoResponse> obtenerProductosDeReserva(Integer reservaId) {
         if (!reservaRepository.existsById(reservaId)) {
             throw new RecursoNoEncontradoException("Reserva no encontrada con ID: " + reservaId);
         }
@@ -63,7 +64,7 @@ public class ReservaProductoService {
     }
 
     @Transactional
-    public void eliminarProducto(Integer reservaId, Integer reservaProductoId) { // <-- CORREGIDO
+    public void eliminarProducto(Integer reservaId, Integer reservaProductoId) {
         Reserva reserva = buscarReserva(reservaId);
         validarEstadoReserva(reserva);
 
@@ -75,19 +76,21 @@ public class ReservaProductoService {
         }
 
         reservaProductoRepository.delete(reservaProducto);
-        reservaProductoRepository.flush();
+        reservaProductoRepository.flush(); // Asegura que se borre de BD antes de recalcular
         actualizarTotalesReserva(reserva);
     }
 
-    private Reserva buscarReserva(Integer reservaId) { // <-- CORREGIDO
+    private Reserva buscarReserva(Integer reservaId) {
         return reservaRepository.findById(reservaId)
                 .orElseThrow(() -> new RecursoNoEncontradoException("Reserva no encontrada con ID: " + reservaId));
     }
 
     private void validarEstadoReserva(Reserva reserva) {
-        String estado = reserva.getEstado().name();
-        if (estado.equals("ANULADA") || estado.equals("FINALIZADA")) {
-            throw new EstadoReservaInvalidoException("No se pueden modificar productos en una reserva " + estado);
+        // Solo permitimos agregar consumos si el cliente ya ingresó (PAGADA)
+        if (reserva.getEstado() != EstadoReserva.PAGADA) {
+            throw new EstadoReservaInvalidoException(
+                "Solo se pueden cargar consumos a reservas donde el cliente ya está hospedado (PAGADA). Estado actual: " + reserva.getEstado()
+            );
         }
     }
 
@@ -97,7 +100,12 @@ public class ReservaProductoService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         reserva.setCostoProductos(totalProductos);
-        reserva.setTotalGeneral(reserva.getCostoHabitacion().add(totalProductos));
+        
+        // CORRECCIÓN: Sumar todos los conceptos (Habitación + Piscina + Productos)
+        BigDecimal costoPiscina = reserva.getCostoPiscina() != null ? reserva.getCostoPiscina() : BigDecimal.ZERO;
+        BigDecimal nuevoTotal = reserva.getCostoHabitacion().add(costoPiscina).add(totalProductos);
+                                       
+        reserva.setTotalGeneral(nuevoTotal);
         reservaRepository.save(reserva);
     }
 

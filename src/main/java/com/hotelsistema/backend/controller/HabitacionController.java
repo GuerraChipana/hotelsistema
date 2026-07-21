@@ -2,7 +2,6 @@ package com.hotelsistema.backend.controller;
 
 import com.hotelsistema.backend.dto.EstadoDTO;
 import com.hotelsistema.backend.dto.habitacionesDTO.ActualizarHabitacionRequest;
-import com.hotelsistema.backend.dto.habitacionesDTO.CambiarEstadoHabitacionRequest;
 import com.hotelsistema.backend.dto.habitacionesDTO.CrearHabitacionRequest;
 import com.hotelsistema.backend.dto.habitacionesDTO.HabitacionResponse;
 import com.hotelsistema.backend.service.HabitacionService;
@@ -11,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;

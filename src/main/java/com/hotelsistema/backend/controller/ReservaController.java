@@ -29,22 +29,56 @@ public class ReservaController {
 
     private final ReservaService reservaService;
 
-    @PostMapping
-    @Operation(summary = "Crear una nueva reserva", 
-               description = "Permite a un CLIENTE reservar para sí mismo. El staff (ADMINISTRADOR/RECEPCIONISTA) puede reservar a nombre de un cliente enviando el usuarioId en el body.")
+    // ==========================================
+    // 1. ENDPOINTS DE CREACIÓN (FLUJOS SEPARADOS)
+    // ==========================================
+
+    @PostMapping("/online")
+    @PreAuthorize("hasRole('CLIENTE')")
+    @Operation(summary = "Crear reserva web (Cliente)", 
+               description = "Permite a un CLIENTE reservar para sí mismo desde la plataforma web. Se asigna automáticamente el estado PENDIENTE.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "201", description = "Reserva creada exitosamente"),
-            @ApiResponse(responseCode = "400", description = "Datos inválidos o fechas no disponibles"),
-            @ApiResponse(responseCode = "404", description = "Habitación o usuario no encontrado")
+            @ApiResponse(responseCode = "400", description = "Datos inválidos o fechas solapadas con otra reserva"),
+            @ApiResponse(responseCode = "404", description = "Habitación no encontrada")
     })
-    public ResponseEntity<ReservaResponse> crear(
+    public ResponseEntity<ReservaResponse> crearReservaOnline(
             @Valid @RequestBody CrearReservaRequest request,
             @Parameter(hidden = true) @AuthenticationPrincipal UserPrincipal principal) {
-        ReservaResponse response = reservaService.crear(request, principal);
+        
+        ReservaResponse response = reservaService.crearReservaOnline(request, principal.getId());
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
+    @PostMapping("/presencial")
+    @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'RECEPCIONISTA')")
+    @Operation(summary = "Crear reserva en mostrador (Staff)", 
+               description = "Permite al staff registrar a un cliente presencialmente. Se debe enviar obligatoriamente el usuarioId del cliente en el body. Se asigna el estado CONFIRMADA.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "201", description = "Reserva creada exitosamente"),
+            @ApiResponse(responseCode = "400", description = "Datos inválidos, fechas solapadas, o falta el ID del cliente"),
+            @ApiResponse(responseCode = "403", description = "No autorizado (Solo Staff)"),
+            @ApiResponse(responseCode = "404", description = "Habitación o usuario no encontrado")
+    })
+    public ResponseEntity<ReservaResponse> crearReservaPresencial(
+            @Valid @RequestBody CrearReservaRequest request) {
+        
+        // Validación estricta a nivel de controlador para el flujo presencial
+        if (request.usuarioId() == null) {
+            throw new IllegalArgumentException("El campo 'usuarioId' es obligatorio para procesar reservas presenciales.");
+        }
+        
+        ReservaResponse response = reservaService.crearReservaPresencial(request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(response);
+    }
+
+
+    // ==========================================
+    // 2. ENDPOINTS DE CONSULTA (LECTURA)
+    // ==========================================
+
     @GetMapping("/mias")
+    @PreAuthorize("hasRole('CLIENTE')")
     @Operation(summary = "Listar mis reservas", 
                description = "Devuelve el historial completo de reservas pertenecientes al usuario actualmente autenticado (Cliente).")
     @ApiResponse(responseCode = "200", description = "Lista de reservas devuelta con éxito")
@@ -91,6 +125,11 @@ public class ReservaController {
             @Parameter(hidden = true) @AuthenticationPrincipal UserPrincipal principal) {
         return ResponseEntity.ok(reservaService.obtenerPorId(id, principal));
     }
+
+
+    // ==========================================
+    // 3. ENDPOINTS DE ACTUALIZACIÓN (MUTACIÓN)
+    // ==========================================
 
     @PatchMapping("/{id}/cancelar")
     @Operation(summary = "Anular una reserva", 
