@@ -19,17 +19,18 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
+@CrossOrigin(origins = "*") // <-- IMPORTANTE: Evita errores de CORS en el navegador al llamar desde React
 @RestController
 @RequestMapping("/api/reservas/{reservaId}/productos")
 @RequiredArgsConstructor
-@Validated // <-- IMPORTANTE: Necesario para validar List<AgregarProductoRequest>
+@Validated // <-- IMPORTANTE: Necesario para que Spring valide la List<AgregarProductoRequest>
 @Tag(name = "Consumos de Reserva (Room Service/Kiosko)", description = "Endpoints para gestionar los productos agregados a la cuenta de una reserva específica.")
 public class ReservaProductoController {
 
     private final ReservaProductoService reservaProductoService;
 
     @PostMapping
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'RECEPCIONISTA')")
+    @PreAuthorize("hasAnyAuthority('ADMINISTRADOR', 'RECEPCIONISTA')") // <-- CORREGIDO: Evita error 403 por prefijos ROLE_
     @Operation(summary = "Agregar múltiples productos a la reserva", 
                description = "Recibe una lista de productos y cantidades para cargarlos al total general de la reserva.")
     @ApiResponses(value = {
@@ -39,7 +40,7 @@ public class ReservaProductoController {
     })
     public ResponseEntity<List<ReservaProductoResponse>> agregarProductos(
             @Parameter(description = "ID de la reserva", required = true) @PathVariable Integer reservaId,
-            @Valid @RequestBody List<AgregarProductoRequest> requests) { // <-- Ahora recibe un List
+            @Valid @RequestBody List<AgregarProductoRequest> requests) { 
         return new ResponseEntity<>(reservaProductoService.agregarProductos(reservaId, requests), HttpStatus.CREATED);
     }
 
@@ -56,7 +57,7 @@ public class ReservaProductoController {
     }
 
     @DeleteMapping("/{reservaProductoId}")
-    @PreAuthorize("hasAnyRole('ADMINISTRADOR', 'RECEPCIONISTA')")
+    @PreAuthorize("hasAnyAuthority('ADMINISTRADOR', 'RECEPCIONISTA')") // <-- CORREGIDO: Evita error 403 por prefijos ROLE_
     @Operation(summary = "Eliminar un consumo", 
                description = "Elimina un producto específico de la cuenta de la reserva y recalcula el total general.")
     @ApiResponses(value = {
