@@ -29,29 +29,39 @@ public class ReservaProductoService {
     private final ReservaRepository reservaRepository;
     private final ProductoRepository productoRepository;
 
+    // --- AHORA RECIBE UNA LISTA DE PRODUCTOS ---
     @Transactional
-    public ReservaProductoResponse agregarProducto(Integer reservaId, AgregarProductoRequest request) {
+    public List<ReservaProductoResponse> agregarProductos(Integer reservaId, List<AgregarProductoRequest> requests) {
         Reserva reserva = buscarReserva(reservaId);
         validarEstadoReserva(reserva);
 
-        Producto producto = productoRepository.findById(request.getProductoId())
-                .orElseThrow(() -> new RecursoNoEncontradoException("Producto no encontrado con ID: " + request.getProductoId()));
+        // Mapear cada request a una entidad ReservaProducto
+        List<ReservaProducto> nuevosProductos = requests.stream().map(request -> {
+            Producto producto = productoRepository.findById(request.getProductoId())
+                    .orElseThrow(() -> new RecursoNoEncontradoException("Producto no encontrado con ID: " + request.getProductoId()));
 
-        BigDecimal precioHistorico = producto.getPrecio();
-        BigDecimal subtotal = precioHistorico.multiply(BigDecimal.valueOf(request.getCantidad()));
+            BigDecimal precioHistorico = producto.getPrecio();
+            BigDecimal subtotal = precioHistorico.multiply(BigDecimal.valueOf(request.getCantidad()));
 
-        ReservaProducto reservaProducto = ReservaProducto.builder()
-                .reserva(reserva)
-                .producto(producto)
-                .cantidad(request.getCantidad())
-                .precioUnitario(precioHistorico)
-                .subtotal(subtotal)
-                .build();
+            return ReservaProducto.builder()
+                    .reserva(reserva)
+                    .producto(producto)
+                    .cantidad(request.getCantidad())
+                    .precioUnitario(precioHistorico)
+                    .subtotal(subtotal)
+                    .build();
+        }).collect(Collectors.toList());
 
-        ReservaProducto guardado = reservaProductoRepository.save(reservaProducto);
+        // Guardar todos de golpe (Batch Insert)
+        List<ReservaProducto> guardados = reservaProductoRepository.saveAll(nuevosProductos);
+        
+        // Actualizar el total general solo una vez al final
         actualizarTotalesReserva(reserva);
 
-        return mapearAResponse(guardado);
+        // Devolver la lista de respuestas
+        return guardados.stream()
+                .map(this::mapearAResponse)
+                .collect(Collectors.toList());
     }
 
     public List<ReservaProductoResponse> obtenerProductosDeReserva(Integer reservaId) {
@@ -86,10 +96,12 @@ public class ReservaProductoService {
     }
 
     private void validarEstadoReserva(Reserva reserva) {
-        // Solo permitimos agregar consumos si el cliente ya ingresó (PAGADA)
-        if (reserva.getEstado() != EstadoReserva.PAGADA) {
+        // CORRECCIÓN PARA TU FRONTEND:
+        // Permitimos agregar consumos en PENDIENTE o PAGADA.
+        // Solo bloqueamos si la reserva ya se terminó (FINALIZADA) o se canceló (ANULADA).
+        if (reserva.getEstado() == EstadoReserva.FINALIZADA || reserva.getEstado() == EstadoReserva.ANULADA) {
             throw new EstadoReservaInvalidoException(
-                "Solo se pueden cargar consumos a reservas donde el cliente ya está hospedado (PAGADA). Estado actual: " + reserva.getEstado()
+                "No se pueden modificar los consumos de una reserva FINALIZADA o ANULADA. Estado actual: " + reserva.getEstado()
             );
         }
     }
@@ -101,7 +113,6 @@ public class ReservaProductoService {
 
         reserva.setCostoProductos(totalProductos);
         
-        // CORRECCIÓN: Sumar todos los conceptos (Habitación + Piscina + Productos)
         BigDecimal costoPiscina = reserva.getCostoPiscina() != null ? reserva.getCostoPiscina() : BigDecimal.ZERO;
         BigDecimal nuevoTotal = reserva.getCostoHabitacion().add(costoPiscina).add(totalProductos);
                                        
